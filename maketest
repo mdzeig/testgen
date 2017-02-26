@@ -1,0 +1,143 @@
+#!/usr/bin/env python
+
+from subprocess import call
+import random
+import yaml
+import argparse
+import string
+
+def maketest(bank_file, config_file, outfile='test', max_tries=10):
+    """ Randomly generate a test from an item bank and a configuation file. The
+    item bank associates one or more tags with each item. The configuration file
+    specifies which items should be sampled using combinations of tags. Both the
+    item bank and configuration files should be valid YAML files.
+
+    Arguments:
+        - bank_file: item bank file name
+        - config_file: configuration file name
+        - outfile: output file name, without extension
+        - max_tries: maximum number of times to try to generate a test.
+    """
+    # Load the item bank
+    with open(bank_file, 'r') as ifile:
+        item_bank = yaml.load(ifile)
+    # Load the configuration file
+    with open(config_file, 'r') as cfile:
+        config = yaml.load(cfile)
+
+    # Convert all of the lists of item tags to sets
+    for item, entry in enumerate(item_bank):
+        item_bank[item]['tags'] = set(entry['tags'])
+
+    # Get the lists of included and excluded tags
+    included_tags = config['include']
+    excluded_tags = set(config['exclude'])
+
+    # Sample test items in the numbers specified by the configuration file.
+    # Currently, if the sampler is unable to complete a test (because it runs out of
+    # items for some tag), it restarts from the begining of the test.
+    tries = 0
+    test = []
+    while not test:
+        if tries == max_tries:
+            msg = "Tried to assemble the test %d times. " % max_tries
+            msg = "%sIncrease 'max_tries' or check configuration file." % msg
+            raise AssertionError(msg)
+        avail = set(range(len(item_bank)))
+        for tag, num in included_tags.items():
+            useable = [item for item in avail
+                       if tag in item_bank[item]['tags']
+                       and not bool(excluded_tags & item_bank[item]['tags'])]
+            if len(useable) < num:
+                test = []
+                tries += 1
+                break
+            for _ in range(num):
+                item = random.choice(useable)
+                useable.remove(item)
+                avail.remove(item)
+                test.append(item)
+
+    # Write the LaTeX code for each test item.
+    # Produces output like the following example
+    #
+    # \question ...insert the item text from item['text']...
+    # \begin{choices}
+    #   \CorrectChoice ...text in item['responses'][0]...
+    #   \choice ...text in item['responses'][1]...
+    #   ...etc...
+    # \end{choices}
+    choices_template = '\\begin{choices}\n %s\n \\end{choices}\n'
+    item_tex = []
+    for item in test:
+        question_text = '\\question %s' % item_bank[item]['text']
+        responses = []
+        for (i, resp) in enumerate(item_bank[item]['responses']):
+            if i == item_bank[item]['correct'] - 1:
+                responses.append('\\CorrectChoice %s' % resp)
+            else:
+                responses.append('\\choice %s' % resp)
+        response_text = choices_template % '\n'.join(responses)
+        item_tex.append('\n'.join([question_text, response_text]))
+    item_tex = '\n'.join(item_tex)
+
+    # Write the LaTeX code to a file and create the pdf file
+    latex = {outfile  + '.tex': write_latex_code(item_tex, show_key=False),
+             outfile + '_and_key.tex': write_latex_code(item_tex, show_key=True)}
+    for fn, code in latex.items():
+        with open(fn, 'w') as tfile:
+            tfile.write(code)
+        call(['pdflatex', fn])
+
+def write_latex_code(item_tex, show_key=False):
+    """ Write the latex code given the item text. """
+    latex_template = string.Template(
+        r"""\documentclass$opts{exam}
+
+        \begin{document}
+            \begin{center}
+                {\large \textbf{PYSC 2010, Research Methods Midterm, Spring 2017}}
+            \end{center}
+
+            \vspace{0.2in}
+            \makebox[\textwidth]{Name:\enspace\hrulefill}
+            \vspace{.4in}
+
+            \begin{center}
+                \fbox{\fbox{\parbox{5.5in}{\centering
+                    Answer the questions in the spaces provided on the
+                    question sheets.  If you run out of room for an answer,
+                    continue on the back of the page.}}}
+            \end{center}
+
+            \vspace{.3in}
+
+            \begin{questions}
+                $questions
+            \end{questions}
+        \end{document}""")
+
+    if show_key:
+        opts = '[answers]'
+    else:
+        opts = ''
+
+    return latex_template.substitute({'opts': opts, 'questions': item_tex})
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Randomly generate a test from an item bank.",
+        epilog="""Tests are defined by a list of tags. Every item in the item bank is
+        assigned one or more tags. The configuration file defines which items should be
+        included in the test using these tags. Every entry in the configuration specifies
+        a set of possible items using their tags and specifies how many of those items
+        should be included in the test.""")
+    parser.add_argument('bank_file', help='YAML file containing the item bank')
+    parser.add_argument('config_file',
+                        help='configuration YAML file defining test structure')
+    parser.add_argument('-o', '--outfile', default='test',
+                        help='name of the output file, without extension')
+    parser.add_argument('--max_tries', default=10,
+                        help='maximum number of times to try to generate a test')
+    args = vars(parser.parse_args())
+    maketest(**args)
