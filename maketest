@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
+""" Random test generation with content balancing. """
+
 from subprocess import call
-import random
-import yaml
 import argparse
+import random
 import string
+import yaml
 
 def maketest(bank_file, config_file, outfile='test', max_tries=10):
     """ Randomly generate a test from an item bank and a configuation file. The
@@ -18,81 +20,104 @@ def maketest(bank_file, config_file, outfile='test', max_tries=10):
         - outfile: output file name, without extension
         - max_tries: maximum number of times to try to generate a test.
     """
-    # Load the item bank
-    with open(bank_file, 'r') as ifile:
-        item_bank = yaml.load(ifile)
-    # Load the configuration file
-    with open(config_file, 'r') as cfile:
-        config = yaml.load(cfile)
+    item_latex = write_item_latex(select_items(load_item_bank(bank_file),
+                                               load_config(config_file),
+                                               max_tries))
+    # Create a PDF for the test
+    create_test_pdf(item_latex, outfile, show_key=False)
+    # Create a PDF with the answer key shown to facilitate grading
+    create_test_pdf(item_latex, outfile, show_key=True)
 
-    # Convert all of the lists of item tags to sets
+
+def load_item_bank(bank_file):
+    """ Load an item bank.
+    """
+    with open(bank_file, 'r') as the_file:
+        item_bank = yaml.load(the_file)
     for item, entry in enumerate(item_bank):
         item_bank[item]['tags'] = set(entry['tags'])
+    return item_bank
 
-    # Get the lists of included and excluded tags
-    included_tags = config['include']
-    excluded_tags = set(config['exclude'])
+def load_config(config_file):
+    """ Load a configuration file.
+    """
+    with open(config_file, 'r') as the_file:
+        config = yaml.load(the_file)
+    config['exclude'] = set(config['exclude'])
+    return config
 
-    # Sample test items in the numbers specified by the configuration file.
-    # Currently, if the sampler is unable to complete a test (because it runs out of
-    # items for some tag), it restarts from the begining of the test.
+def select_items(item_bank, config, max_tries):
+    """ Sample test items in the numbers specified by the configuration file. Currently,
+    if the sampler is unable to complete a test (because it runs out of items for some
+    tag), it restarts from the begining of the test.
+    """
     tries = 0
-    test = []
-    while not test:
+    test_items = []
+    while not test_items:
         if tries == max_tries:
             msg = "Tried to assemble the test %d times. " % max_tries
             msg = "%sIncrease 'max_tries' or check configuration file." % msg
             raise AssertionError(msg)
         avail = set(range(len(item_bank)))
-        for tag, num in included_tags.items():
+        for tag, num in config['include'].items():
             useable = [item for item in avail
                        if tag in item_bank[item]['tags']
-                       and not bool(excluded_tags & item_bank[item]['tags'])]
+                       and not bool(config['exclude'] & item_bank[item]['tags'])]
             if len(useable) < num:
-                test = []
+                test_items = []
                 tries += 1
                 break
             for _ in range(num):
                 item = random.choice(useable)
                 useable.remove(item)
                 avail.remove(item)
-                test.append(item)
+                test_items.append(item)
+    return [item_bank[item] for item in test_items]
 
-    # Write the LaTeX code for each test item.
-    # Produces output like the following example
-    #
-    # \question ...insert the item text from item['text']...
-    # \begin{choices}
-    #   \CorrectChoice ...text in item['responses'][0]...
-    #   \choice ...text in item['responses'][1]...
-    #   ...etc...
-    # \end{choices}
+def write_item_latex(test):
+    r""" Write out the LaTeX code for test items. Produces output like the following
+    example:
+
+    \question ...insert the item text from item['text']...
+    \begin{choices}
+        \CorrectChoice ...text in item['responses'][0]...
+        \choice ...text in item['responses'][1]...
+        ...etc...
+    \end{choices}
+    """
     choices_template = '\\begin{choices}\n %s\n \\end{choices}\n'
-    item_tex = []
+    item_latex = []
     for item in test:
-        question_text = '\\question %s' % item_bank[item]['text']
+        question_text = '\\question %s' % item['text']
         responses = []
-        for (i, resp) in enumerate(item_bank[item]['responses']):
-            if i == item_bank[item]['correct'] - 1:
+        for (i, resp) in enumerate(item['responses']):
+            if i == item['correct'] - 1:
                 responses.append('\\CorrectChoice %s' % resp)
             else:
                 responses.append('\\choice %s' % resp)
         response_text = choices_template % '\n'.join(responses)
-        item_tex.append('\n'.join([question_text, response_text]))
-    item_tex = '\n'.join(item_tex)
+        item_latex.append('\n'.join([question_text, response_text]))
+    return '\n'.join(item_latex)
 
-    # Write the LaTeX code to a file and create the pdf file
-    latex = {outfile  + '.tex': write_latex_code(item_tex, show_key=False),
-             outfile + '_and_key.tex': write_latex_code(item_tex, show_key=True)}
-    for fn, code in latex.items():
-        with open(fn, 'w') as tfile:
-            tfile.write(code)
-        call(['pdflatex', fn])
+def create_test_pdf(item_latex, outfile, show_key=False):
+    """ Write the latex code given the item text.
+    """
+    if show_key:
+        docclass_opts = '[answers]'
+        latex_file = outfile + '_and_key.tex'
+    else:
+        docclass_opts = ''
+        latex_file = outfile + '.tex'
+    latex_code = latex_template().substitute({'docclass_opts': docclass_opts,
+                                              'questions': item_latex})
+    with open(latex_file, 'w') as the_file:
+        the_file.write(latex_code)
+    return call(['pdflatex', latex_file])
 
-def write_latex_code(item_tex, show_key=False):
-    """ Write the latex code given the item text. """
-    latex_template = string.Template(
-        r"""\documentclass$opts{exam}
+def latex_template():
+    """ Template for writing LaTeX code from item code. """
+    return string.Template(
+        r"""\documentclass$docclass_opts{exam}
 
         \begin{document}
             \begin{center}
@@ -116,13 +141,6 @@ def write_latex_code(item_tex, show_key=False):
                 $questions
             \end{questions}
         \end{document}""")
-
-    if show_key:
-        opts = '[answers]'
-    else:
-        opts = ''
-
-    return latex_template.substitute({'opts': opts, 'questions': item_tex})
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
