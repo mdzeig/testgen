@@ -6,4 +6,4 @@
 maketest item_bank.yaml config.yaml
 ```
 
-within the `examples` folder. This will generate two LaTeX files (one with an answer key and one without) and use `pdflatex` to create a PDF file. Thus, a working TeX distribution is necessary to use `maketest`. This distribution must include the `exam` document class (which is part of the TeXLive distribution <https://www.tug.org/texlive/>). Additionally, this script depends on PyYAML <http://pyyaml.org>.
+within the `examples` folder. This will generate two LaTeX files (one with an answer key and one without) and use `pdflatex` to create a PDF file. Thus, a working TeX distribution is necessary to use `maketest`. This distribution must include the `exam` document class, which is part of the TeXLive distribution (<https://www.tug.org/texlive/>). Additionally, this script depends on PyYAML (<http://pyyaml.org>).
