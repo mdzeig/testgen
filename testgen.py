@@ -17,20 +17,15 @@ class TestItem:
     def has_tags(self, head, *tail):
         """ Determine whether the item has each of a set of tags.
         """
-        if head is None:
-            return True
-        elif head in self.tags:
-            return self.has_tags(tail)
-        else:
-            return False
+        return self.tags.issuperset([head] + list(tail))
 
     def latex(self):
         """ Return a LaTeX representation of the item.
         """
         question = '\\question %s' % self.text
-        responses = '\n'.join([ '\\CorrectChoice %s' % resp
-                                if i == self.correct else '\\choice %s' % resp
-                                for i, resp in enumerate(self.responses) ])
+        responses = '\n'.join(['\\CorrectChoice %s' % resp
+                               if i == self.correct else '\\choice %s' % resp
+                               for i, resp in enumerate(self.responses)])
         responses = '\\begin{choices}\n %s\n \\end{choices}\n' % responses
         return '\n'.join([question, responses])
 
@@ -83,9 +78,9 @@ def select_items(item_bank, config, max_tries):
             raise AssertionError(msg)
         avail = set(range(len(item_bank)))
         for tag, num in config['include'].items():
-            useable = [ item for item in avail
-                        if item_bank[item].has_tags(tag)
-                        and not item_bank[item].has_tags(config['exclude']) ]
+            useable = [item for item in avail
+                       if item_bank[item].has_tags(tag)
+                       and not item_bank[item].has_tags(*config['exclude'])]
             if len(useable) < num:
                 test_items = []
                 tries += 1
