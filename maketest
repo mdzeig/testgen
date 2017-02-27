@@ -6,6 +6,7 @@ from subprocess import call
 import argparse
 import random
 import string
+import sys
 import yaml
 
 def maketest(bank_file, config_file, outfile='test', max_tries=10):
@@ -23,11 +24,9 @@ def maketest(bank_file, config_file, outfile='test', max_tries=10):
     item_latex = write_item_latex(select_items(load_item_bank(bank_file),
                                                load_config(config_file),
                                                max_tries))
-    # Create a PDF for the test
-    create_test_pdf(item_latex, outfile, show_key=False)
-    # Create a PDF with the answer key shown to facilitate grading
-    create_test_pdf(item_latex, outfile, show_key=True)
-
+    # Create a PDF for the test with and without showing the answer key
+    for show_key in [False, True]:
+        create_test_pdf(item_latex, outfile, show_key)
 
 def load_item_bank(bank_file):
     """ Load an item bank.
@@ -142,7 +141,9 @@ def latex_template():
             \end{questions}
         \end{document}""")
 
-if __name__ == "__main__":
+def parse_args(argv=None):
+    """ Parse command line arguments.
+    """
     parser = argparse.ArgumentParser(
         description="Randomly generate a test from an item bank.",
         epilog="""Tests are defined by a list of tags. Every item in the item bank is
@@ -157,5 +158,7 @@ if __name__ == "__main__":
                         help='name of the output file, without extension')
     parser.add_argument('--max_tries', default=10,
                         help='maximum number of times to try to generate a test')
-    args = vars(parser.parse_args())
-    maketest(**args)
+    return vars(parser.parse_args(argv))
+
+if __name__ == "__main__":
+    maketest(**parse_args(sys.argv[1:]))
