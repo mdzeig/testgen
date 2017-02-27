@@ -5,6 +5,7 @@ import random
 import string
 import yaml
 
+# Make function again?
 class TestItem:
     """ Multiple choice item.
     """
@@ -14,10 +15,10 @@ class TestItem:
         self.correct = correct
         self.tags = set(tags)
 
-    def has_tags(self, head, *tail):
+    def has_tags(self, tags):
         """ Determine whether the item has each of a set of tags.
         """
-        return self.tags.issuperset([head] + list(tail))
+        return self.tags.issuperset(tags)
 
     def latex(self):
         """ Return a LaTeX representation of the item.
@@ -62,7 +63,13 @@ def load_config(config_file):
     with open(config_file, 'r') as the_file:
         config = yaml.load(the_file)
     config['exclude'] = set(config['exclude'])
-    return config
+    return [{'include': set([k]), 'exclude': config['exclude'], 'n': v}
+            for k, v in config['include'].items()]
+
+def satisfies_criterion(item, criterion):
+    """ Does the item satisfy the criterion? """
+    return (item.has_tags(criterion['include'])
+            and not item.has_tags(criterion['exclude']))
 
 def select_items(item_bank, config, max_tries):
     """ Sample test items in the numbers specified by the configuration file. Currently,
@@ -76,21 +83,20 @@ def select_items(item_bank, config, max_tries):
             msg = "Tried to assemble the test %d times. " % max_tries
             msg = "%sIncrease 'max_tries' or check configuration file." % msg
             raise AssertionError(msg)
-        avail = set(range(len(item_bank)))
-        for tag, num in config['include'].items():
-            useable = [item for item in avail
-                       if item_bank[item].has_tags(tag)
-                       and not item_bank[item].has_tags(*config['exclude'])]
-            if len(useable) < num:
+        available = set(range(len(item_bank)))
+        for criterion in config:
+            useable = [i for i in available if
+                       satisfies_criterion(item_bank[i], criterion)]
+            if len(useable) < criterion['n']:
                 test_items = []
                 tries += 1
                 break
-            for _ in range(num):
+            for _ in range(criterion['n']):
                 item = random.choice(useable)
                 useable.remove(item)
-                avail.remove(item)
+                available.remove(item)
                 test_items.append(item)
-    return [item_bank[item] for item in test_items]
+    return [item_bank[i] for i in test_items]
 
 def create_test_pdf(item_latex, outfile, show_key=False):
     """ Write the latex code given the item text.
